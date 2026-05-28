@@ -2,127 +2,347 @@
 
 ## Date: 14.05.2026
 # Register no: 212223110050
----
+# Aim: 
+Write and implement Python code that integrates with multiple AI tools to automate the task of interacting with APIs, comparing outputs, and generating actionable insights with Multiple AI Tools
 
-# Aim
+# AI Tools Required:
+OpenAI  
+Anthropic  
+Google Gemini  
+OpenRouter  
+AIMLAPI  
+LangChain  
+LangGraph  
+Semantic Kernel  
+LLM Comparator  
+PAIR llm-comparator
 
-To write and implement Python code that integrates with multiple AI tools to automate tasks such as interacting with APIs, comparing outputs, and generating actionable insights using Multiple AI Tools.
+# Explanation:
+Experiment the persona pattern as a programmer for any specific applications related with your interesting area. 
+Generate the outoput using more than one AI tool and based on the code generation analyse and discussing that. 
+# PROMPT: 
+GIVE ME A PYTHON CODE TO IMPLEMENT A MODEL THAT INTEGRATES WITH MULTIPLE AI TOOLS TO AUTOMATE THE TASK OF INTERACTING WITH APIS, COMPARING OUTPUTS, AND GENERATING ACTIONABLE INSIGHTS WITH MULTIPLE AI TOOLS.
 
----
+# OUTPUT:
+Here is a minimal but complete Python pattern you can adapt to call multiple AI APIs in parallel, compare their outputs, and turn them into actionable insights.[1][2]
 
-# AI Tools Required
+## Overview
 
-- ChatGPT
-- Google Gemini
-- GitHub Copilot
+The pattern below:
 
----
+- Wraps each AI provider in a common interface.
+- Uses `asyncio` to call all models in parallel.
+- Normalizes and compares responses to extract concise **insights**.
 
-# Explanation
+You can plug in any APIs (OpenAI, Anthropic, Gemini, local models, etc.) by filling in the placeholders.
 
-In this experiment, the Persona Pattern is used by assigning the AI the role of a Python programmer specializing in educational applications. The task is to generate Python code that interacts with multiple AI tools and compares their outputs.
+***
 
-The experiment focuses on:
-- API interaction
-- Comparing AI-generated responses
-- Generating insights from outputs
-- Evaluating code quality and compatibility
-
-The chosen application area is **Student Performance Analysis System**.
-
----
-
-# Persona Pattern Used
-
-```text
-"You are an expert Python programmer specializing in AI-based educational applications. Generate Python code that interacts with multiple AI APIs, compares outputs, and provides analytical insights."
-```
-
----
-
-# Python Code Generated Using AI Tools
+## 1. Setup and Model Abstractions
 
 ```python
-import requests
+import os
+import asyncio
+import json
+from dataclasses import dataclass
+from typing import Dict, Any, List
 
-def get_chatgpt_response(prompt):
-    return "ChatGPT Response: Students performed well in Mathematics."
+import aiohttp  # pip install aiohttp
 
-def get_gemini_response(prompt):
-    return "Gemini Response: Mathematics scores improved significantly."
+# Load keys from env or config
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "YOUR_OPENAI_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "YOUR_ANTHROPIC_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_KEY")
 
-def compare_outputs(output1, output2):
-    print("\n--- AI Tool Outputs Comparison ---")
-    print(output1)
-    print(output2)
 
-    if "improved" in output2.lower():
-        print("\nInsight: Student performance shows positive growth.")
-    else:
-        print("\nInsight: Further analysis required.")
+@dataclass
+class ModelResponse:
+    provider: str
+    model: str
+    text: str
+    usage: Dict[str, Any]
 
-prompt = "Analyze student performance in Mathematics."
 
-chatgpt_output = get_chatgpt_response(prompt)
-gemini_output = get_gemini_response(prompt)
+class BaseModelClient:
+    provider: str
 
-compare_outputs(chatgpt_output, gemini_output)
+    async def generate(self, session: aiohttp.ClientSession, prompt: str) -> ModelResponse:
+        raise NotImplementedError
 ```
 
----
+***
 
-# Output
+## 2. Example Clients for Different APIs
 
-```text
---- AI Tool Outputs Comparison ---
+### OpenAI-style client
 
-ChatGPT Response: Students performed well in Mathematics.
+Adapt the URL/body to the current endpoint you use.
 
-Gemini Response: Mathematics scores improved significantly.
+```python
+class OpenAIClient(BaseModelClient):
+    provider = "openai"
 
-Insight: Student performance shows positive growth.
+    def __init__(self, model: str = "gpt-4.1-mini"):
+        self.model = model
+
+    async def generate(self, session: aiohttp.ClientSession, prompt: str) -> ModelResponse:
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "You are a concise, analytical assistant."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.3,
+        }
+
+        async with session.post(url, headers=headers, json=payload, timeout=60) as resp:
+            data = await resp.json()
+            text = data["choices"][0]["message"]["content"]
+            usage = data.get("usage", {})
+            return ModelResponse(provider=self.provider, model=self.model, text=text, usage=usage)
 ```
 
----
+### Anthropic-style client
 
-# Analysis of AI Tool Outputs
+```python
+class AnthropicClient(BaseModelClient):
+    provider = "anthropic"
 
-| Feature | ChatGPT | Gemini | GitHub Copilot |
-|---|---|---|---|
-| Code Readability | High | High | Moderate |
-| API Integration Suggestion | Good | Good | Excellent |
-| Error Handling | Moderate | Moderate | Basic |
-| Explanation Quality | Detailed | Clear | Minimal |
-| Code Optimization | Good | Good | Very Good |
+    def __init__(self, model: str = "claude-3-5-sonnet-20241022"):
+        self.model = model
 
----
+    async def generate(self, session: aiohttp.ClientSession, prompt: str) -> ModelResponse:
+        url = "https://api.anthropic.com/v1/messages"
+        headers = {
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": self.model,
+            "max_tokens": 512,
+            "temperature": 0.3,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "system": "You are a concise, analytical assistant.",
+        }
 
-# Discussion
+        async with session.post(url, headers=headers, json=payload, timeout=60) as resp:
+            data = await resp.json()
+            text = "".join(block["text"] for block in data["content"] if block["type"] == "text")
+            usage = data.get("usage", {})
+            return ModelResponse(provider=self.provider, model=self.model, text=text, usage=usage)
+```
 
-- ChatGPT generated well-structured and readable Python code with proper function organization.
-- Gemini provided concise and efficient logic for output comparison.
-- GitHub Copilot suggested useful API integration methods and syntax improvements.
-- Combining outputs from multiple AI tools improved overall code quality and generated better insights.
-- Persona Pattern helped guide the AI tools toward generating application-specific solutions.
+### Google Gemini-style client
 
----
+```python
+class GeminiClient(BaseModelClient):
+    provider = "gemini"
 
-# Advantages
+    def __init__(self, model: str = "gemini-1.5-flash"):
+        self.model = model
 
-- Faster code development
-- Better comparison of AI-generated outputs
-- Improved automation
-- Enhanced analytical insights
-- Easy integration with multiple AI tools
+    async def generate(self, session: aiohttp.ClientSession, prompt: str) -> ModelResponse:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={GEMINI_API_KEY}"
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 512},
+        }
 
----
+        async with session.post(url, headers=headers, json=payload, timeout=60) as resp:
+            data = await resp.json()
+            text = data["candidates"][0]["content"]["parts"][0]["text"]
+            usage = data.get("usageMetadata", {})
+            return ModelResponse(provider=self.provider, model=self.model, text=text, usage=usage)
+```
 
-# Conclusion
+***
 
-The experiment successfully demonstrated the development of Python code compatible with multiple AI tools. Using the Persona Pattern improved the relevance and quality of generated code. The outputs from ChatGPT, Gemini, and GitHub Copilot were compared and analyzed effectively. Multi-AI integration helps improve productivity, code quality, and decision-making in software development.
+## 3. Orchestrator: Call All Models in Parallel
 
----
+```python
+class MultiAIEvaluator:
+    def __init__(self, clients: List[BaseModelClient]):
+        self.clients = clients
 
-# Result
+    async def _run_single(self, session: aiohttp.ClientSession, client: BaseModelClient, prompt: str):
+        try:
+            return await client.generate(session, prompt)
+        except Exception as e:
+            return ModelResponse(
+                provider=client.provider,
+                model=getattr(client, "model", "unknown"),
+                text=f"ERROR: {e}",
+                usage={},
+            )
 
-The corresponding prompt was executed successfully, and Python code compatible with multiple AI tools was generated, analyzed, and compared successfully.
+    async def run_all(self, prompt: str) -> List[ModelResponse]:
+        async with aiohttp.ClientSession() as session:
+            tasks = [self._run_single(session, c, prompt) for c in self.clients]
+            return await asyncio.gather(*tasks)
+```
+
+This pattern (async tasks over a list of tools) is standard for orchestrating multiple agents or models.[6][3]
+
+***
+
+## 4. Simple Automatic Comparison & Insight Generation
+
+Here, a “judge” prompt is used on one of your LLMs to produce structured comparison and **actionable** summary. This mirrors side‑by‑side evaluation patterns used in LLM comparator tools.
+
+```python
+async def auto_compare_and_summarize(
+    judge_client: BaseModelClient,
+    prompt: str,
+    model_outputs: List[ModelResponse],
+) -> Dict[str, Any]:
+    """Ask one model to act as a judge over the others."""
+
+    comparison_payload = {
+        "user_prompt": prompt,
+        "responses": [
+            {
+                "provider": r.provider,
+                "model": r.model,
+                "text": r.text,
+            }
+            for r in model_outputs
+        ],
+    }
+
+    judge_prompt = (
+        "You are an expert evaluator comparing multiple AI model outputs.\n\n"
+        "Given the original user prompt and the model responses (in JSON), do the following:\n"
+        "1. Briefly describe the main points of agreement and disagreement.\n"
+        "2. Identify which response is most reliable and why.\n"
+        "3. List concrete, actionable recommendations for a user based on the BEST response.\n"
+        "4. Output a JSON object with keys: 'best_model', 'reasoning', 'agreements', "
+        "'disagreements', 'action_items'.\n\n"
+        f"DATA:\n{json.dumps(comparison_payload, indent=2)}"
+    )
+
+    async with aiohttp.ClientSession() as session:
+        judge_raw = await judge_client.generate(session, judge_prompt)
+    # Very naive JSON extraction (you can improve with regex or structured-output tools). [web:18]
+    text = judge_raw.text.strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1:
+        try:
+            return json.loads(text[start : end + 1])
+        except Exception:
+            pass
+
+    # Fallback: wrap in a generic container
+    return {
+        "best_model": None,
+        "reasoning": text,
+        "agreements": [],
+        "disagreements": [],
+        "action_items": [],
+    }
+```
+
+Using one model as a judge for others is a common pattern in evaluation frameworks and research.
+***
+
+## 5. Putting It All Together
+
+```python
+async def main():
+    user_prompt = (
+        "You are helping an engineering student design a study plan for learning "
+        "quantum computing and Python over 3 months. Provide detailed, practical steps."
+    )
+
+    clients = [
+        OpenAIClient("gpt-4.1-mini"),
+        AnthropicClient("claude-3-5-sonnet-20241022"),
+        GeminiClient("gemini-1.5-flash"),
+    ]
+
+    orchestrator = MultiAIEvaluator(clients)
+    model_outputs = await orchestrator.run_all(user_prompt)
+
+    print("=== Raw Model Outputs ===")
+    for r in model_outputs:
+        print(f"\n[{r.provider}:{r.model}]")
+        print(r.text[:800], "...\n")
+
+    # Use one of the models (e.g., OpenAI) as the judge
+    judge_client = OpenAIClient("gpt-4.1-mini")
+    insights = await auto_compare_and_summarize(
+        judge_client=judge_client,
+        prompt=user_prompt,
+        model_outputs=model_outputs,
+    )
+
+    print("\n=== Aggregated Insights ===")
+    print(json.dumps(insights, indent=2))
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+This main flow:
+
+- Sends the same task to multiple tools/models.
+- Prints side‑by‑side outputs for manual inspection.
+- Automatically derives a compact JSON of **best model** plus action items
+
+***
+
+## 6. How to Extend This
+
+- Plug in other tools (web search, vector DB, internal APIs) by wrapping them in `BaseModelClient` or sibling abstractions.
+- Add logging of latency, cost, and token usage to pick the best cost–performance trade‑off.
+- Persist `model_outputs` and `insights` to a database or dashboard for continuous evaluation.
+
+## OUTPUT COMPARISION: 
+PROMPT: COMPARE THE OUTPUT FROM DIFFERENT APIs AND HIGHLIGHT THE DIFFERENCE.<BR>
+**OUTPUT:**
+OpenAI GPT, Anthropic Claude, and Google Gemini produce distinct outputs on the same prompts.[1][2]
+
+### Key Differences
+
+| Aspect | OpenAI GPT | Anthropic Claude | Google Gemini |
+|--------|------------|------------------|---------------|
+| **Style** | Creative, conversational, human-like flair [2][3] | Guarded, thorough, safety-focused explanations [2][3] | Factual, consistent, data-rich [1][2] |
+| **Strengths** | Creativity, flexibility, multimodal tasks [1][4] | Reasoning, large inputs, fewer hallucinations [2][3] | Speed, accuracy, long-context [2][5] |
+| **Speed** | GPT-4o: 2x faster TTFT (0.56s), 56 tokens/s [6] | Slower (1.23s TTFT), 28 tokens/s [6] | Fastest overall, <300ms latency [5] |
+| **Accuracy** | Higher on facts (40% improvement), but creative risks [2][6] | Correct on technical details [6] | Top factual consistency [2][3] |
+
+GPT leads creativity/accuracy, Claude excels reasoning/safety, Gemini wins speed/facts.[5][4][1]
+
+## INSIGHTS: 
+PROMPT: GIVE ME THE MEANINGFUL INSIGHTS FOR THESE
+**OUTPUT:**
+**For multi-AI orchestration, pick models by task type, not one-size-fits-all.**
+
+### Actionable Insights
+
+- **Creative tasks** (writing, ideation): Use GPT-4o/4.1 first[1][2]
+- **Technical/reasoning** (code, analysis): Claude 3.5 Sonnet leads[3][4]
+- **Speed/facts** (research, Q&A): Gemini 1.5 Flash/Pro[5][3]
+
+**Orchestration strategy**: Send prompts to **all three in parallel**, let a "judge" model (Claude) score/rank them automatically. This gets best-of-breed results every time.[6][1]
+
+**Cost optimization**: Gemini fastest/lowest latency, GPT highest quality/creativity value.[4]
+
+# Conclusion:
+Use OpenRouter or AIMLAPI as your single aggregator for multiple LLMs, pair it with asyncio in Python for parallel calls, and add a simple "judge" prompt for automated comparisons and actionable insights. This minimal stack delivers robust multi-AI orchestration without complexity.
+
+
+
+# Result: 
+The corresponding Prompt is executed successfully.
+corresponding prompt was executed successfully, and Python code compatible with multiple AI tools was generated, analyzed, and compared successfully.
